@@ -2,9 +2,16 @@
 import curses
 
 # TODO: implement enpassant DONE
+# TODO: implement castling move DONE
 # TODO: implement checking, you can't move any pieces that doesn't 
 #       make your king safe
-# TODO: implement castling move
+# TODO: implement safe king moving, your king cannot move to a square
+#       that is attacked. This has to be embedded into the move of every
+#       piece
+# TODO: implement check mating. The computer can recognize once
+#       there are no moves that can save the king.
+# TODO: implement stalemating. The game can recognize once
+#       there are no moves that can be made by the current player
 # TODO: implement pawn promotion
 # TODO: Make you code better!
 
@@ -48,12 +55,23 @@ class Control:
         self.curs_loc = [0, 0] # CPs(0, 0)
         self.pce_loc = [-1, -1]
         self.moves = []
+
+        # -- for enpassant --
         self.last_pawn_skip = -1 # the column of the pawn which skipped in
                                     # the last move, if no pawns skip
                                     # then value equals to -1.
 
-        # self.can_enpassant[0] is the white pawns
-        # self.can_enpassant[1] is the black pawns
+        self.has_king_moved = [False, False]
+        # self.has_king_moved[self.WHITE] = whether the white king has moved
+        # self.has_king_moved[self.BLACK] = whether the black king has moved
+
+        # -- for castling --
+        self.has_rook_moved = [[False, False],
+                               [False, False]]
+        # self.has_rook_moved[self.WHITE][0] = has leftmost white rook moved
+        # self.has_rook_moved[self.WHITE][1] = has rightmost white rook moved
+        # self.has_rook_moved[self.BLACK][0] = has leftmost black rook moved
+        # self.has_rook_moved[self.BLACK][1] = has rightmost black rook moved
 
     def get_current_player(self):
         return self.turn
@@ -134,32 +152,104 @@ class Control:
         """sets board at position tp to empty"""
         self.brd[tp[0]][tp[1]] = self.EP
 
+    def is_pawn(self, p):
+        return self.brd[p[0]][p[1]] in [self.WP, self.BP]
+    
+    def is_king(self, p):
+        return self.brd[p[0]][p[1]] in [self.WK, self.BK]
+
+    def is_rook(self, p):
+        return self.brd[p[0]][p[1]] in [self.WR, self.BR]
+
+    def is_right_castling(self, cp, tp):
+        t = self.turn
+        r = (7, 0)[t]
+        c = 4
+        not_moved = not self.has_king_moved[t] and\
+                    not self.has_rook_moved[t][1]
+        king_correct_pos = (cp[0] == r) and (cp[1] == c)
+        rook_correct_pos = self.brd[r][7] == (self.WR, self.BR)[t]
+        all_correct_pos = king_correct_pos and rook_correct_pos
+        empty_right = [self.is_sqr_ep((r, i)) for i in range(c + 1, 7)]
+
+        is_king = self.is_king(cp)
+        col_move = tp[1] - cp[1] == 2
+        row_move = cp[0] - tp[0] == 0
+        return is_king and col_move and row_move and all(empty_right)\
+             and not_moved and all_correct_pos
+
+    def is_left_castling(self, cp, tp):
+        t = self.turn
+        r = (7, 0)[t]
+        c = 4
+        not_moved = not self.has_king_moved[t] and\
+                    not self.has_rook_moved[t][0]
+        king_correct_pos = (cp[0] == r) and (cp[1] == c)
+        rook_correct_pos = self.brd[r][0] == (self.WR, self.BR)[t]
+        all_correct_pos = king_correct_pos and rook_correct_pos
+        empty_left = [self.is_sqr_ep((r, i)) for i in range(1, c)]
+
+        is_king = self.is_king(cp)
+        col_move = cp[1] - tp[1] == 2
+        row_move = cp[0] - tp[0] == 0
+        return is_king and col_move and row_move and all(empty_left)\
+            and not_moved and all_correct_pos
+
     def move_piece(self):
         """move selected piece on pce_loc to 
         curs_loc if curs_loc is a valid move"""
         tp = tuple(self.curs_loc) # target move
         cp = tuple(self.pce_loc) # current piece location
 
-        # is the piece at position 'p' a pawn
-        is_pawn = lambda p : self.brd[p[0]][p[1]] in [self.WP, self.BP]
 
         if tp in self.moves:
             piece = self.brd[cp[0]][cp[1]]
 
             # when the move being done is an enpassant
-            if is_pawn(cp) and self.is_enpassant(cp, tp):
+            if self.is_pawn(cp) and self.is_enpassant(cp, tp):
                 self.move(cp, tp)
                 ep = (tp[0] + (1, -1)[self.turn], tp[1]) # enemy position
                 self.make_empty(ep)
                 self.toggle_player_turn()
                 return
 
+            # when the move being done is a right castle
+            if self.is_right_castling(cp, tp):
+                self.move(cp, tp)
+                self.make_empty(((7, 0)[self.turn], 7))
+                self.brd[tp[0]][tp[1] - 1] = (self.WR, self.BR)[self.turn]
+                self.toggle_player_turn()
+                return
+
+            # when the move being done is a left castle
+            if self.is_left_castling(cp, tp):
+                self.move(cp, tp)
+                self.make_empty(((7, 0)[self.turn], 0))
+                self.brd[tp[0]][tp[1] + 1] = (self.WR, self.BR)[self.turn]
+                self.toggle_player_turn()
+                return
+
             # when the move being done is a pawn skip
             do_pawn_skip = lambda cp, tp : tp[0] == cp[0] + [-2, 2][self.turn]
-            if is_pawn(cp) and do_pawn_skip(cp, tp):
+            if self.is_pawn(cp) and do_pawn_skip(cp, tp):
                 self.last_pawn_skip = tp[1]
             else:
                 self.last_pawn_skip = -1
+
+            # when the king moves we want to tell the game the king has moved
+            if self.is_king(cp):
+                self.has_king_moved[self.turn] = True
+            
+            if self.is_rook(cp):
+                if cp == (7, 0) and self.turn == self.WHITE:
+                    self.has_rook_moved[self.WHITE][0] = True
+                elif cp == (7, 7) and self.turn == self.WHITE:
+                    self.has_rook_moved[self.WHITE][1] = True
+                elif cp == (0, 0) and self.turn == self.BLACK:
+                    self.has_rook_moved[self.BLACK][0] = True
+                elif cp == (0, 7) and self.turn == self.BLACK:
+                    self.has_rook_moved[self.BLACK][1] = True
+
 
             self.move(cp, tp)
             self.toggle_player_turn()
@@ -255,6 +345,48 @@ class Control:
                 tp = (tp[0] + d[0], tp[1] + d[1])
         return moves
 
+    def get_knight_moves(self, cp, is_sqr_ally):
+        moves = []
+        for s in [(-1, 1), (1, -1), (1, 1), (-1, -1)]:
+            for d in [(2, 1), (1, 2)]:
+                tp = (cp[0] + d[0] * s[0], cp[1] + d[1] * s[1])
+                if self.is_within_bounds(tp) and not is_sqr_ally(tp):
+                    moves.append(tp)
+        return moves
+
+    def get_bishop_moves(self, cp, is_sqr_ally, is_sqr_enemy):
+        moves = []
+        for d in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            r, c = cp
+            tp = (r + d[0], c + d[1]) # target position
+            while self.is_within_bounds(tp) and not is_sqr_ally(tp):
+                moves.append(tp)
+                if is_sqr_enemy(tp):
+                    break
+                tp = (tp[0] + d[0], tp[1] + d[1])
+        return moves
+    
+    def get_king_moves(self, cp, is_sqr_ally):
+        moves = []
+        r, c = cp
+        for d in [(1, 1), (1, -1), (-1, 1), (-1, -1),
+                  (0, -1), (0, 1), (1, 0), (-1, 0)]:
+            tp = (r + d[0], c + d[1])
+            if self.is_within_bounds(tp) and not is_sqr_ally(tp):
+                moves.append(tp)
+        return moves
+
+    def get_king_castling_move(self, cp, t):
+        moves = []
+        r, c = (7, 0)[t], 4
+        tp = (r, c - 2)
+        if self.is_left_castling(cp, tp):
+            moves.append((r, c - 2))
+        tp = (r, c + 2)
+        if self.is_right_castling(cp, tp):
+            moves.append((r, c + 2))
+        return moves
+
     def get_valid_move_aux(self, pc_pos, is_ally, is_enemy):
         """generates valid moves for selected piece"""
         moves = []
@@ -274,55 +406,28 @@ class Control:
             moves.extend(
                 self.get_pawn_diagonal_capture_moves(pc_pos, t, is_sqr_enemy))
 
-            moves.extend(get_pawn_enpassant_capture_moves(pc_pos, t))
+            moves.extend(self.get_pawn_enpassant_capture_moves(pc_pos, t))
 
         elif selected_piece in [self.WR, self.BR]:
-            # for d in [(0, -1), (0, 1), (1, 0), (-1, 0)]:
-            #     r, c = pc_pos
-            #     tp = (r + d[0], c + d[1]) # target position
-            #     while self.is_within_bounds(tp) and not is_sqr_ally(tp):
-            #         moves.append(tp)
-            #         if is_sqr_enemy(tp):
-            #             break
-            #         tp = (tp[0] + d[0], tp[1] + d[1])
-            moves.extend(self.get_rook_moves(pc_pos, is_sqr_ally, is_sqr_enemy))
+            moves.extend(
+                self.get_rook_moves(pc_pos, is_sqr_ally, is_sqr_enemy))
 
         elif selected_piece in [self.WKN, self.BKN]:
-            for s in [(-1, 1), (1, -1), (1, 1), (-1, -1)]:
-                for d in [(2, 1), (1, 2)]:
-                    tp = (pc_pos[0] + d[0] * s[0], pc_pos[1] + d[1] * s[1])
-                    if self.is_within_bounds(tp) and not is_sqr_ally(tp):
-                        moves.append(tp)
+            moves.extend(self.get_knight_moves(pc_pos, is_sqr_ally))
 
         elif selected_piece in [self.WB, self.BB]:
-            for d in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
-                r, c = pc_pos
-                tp = (r + d[0], c + d[1]) # target position
-                while self.is_within_bounds(tp) and not is_sqr_ally(tp):
-                    moves.append(tp)
-                    if is_sqr_enemy(tp):
-                        break
-                    tp = (tp[0] + d[0], tp[1] + d[1])
+            moves.extend(
+                self.get_bishop_moves(pc_pos, is_sqr_ally, is_sqr_enemy))
 
         elif selected_piece in [self.WQ, self.BQ]:
-            for d in [(1, 1), (1, -1), (-1, 1), (-1, -1),
-                      (0, -1), (0, 1), (1, 0), (-1, 0)]:
-                r, c = pc_pos
-                tp = (r + d[0], c + d[1]) # target position
-                while self.is_within_bounds(tp) and not is_sqr_ally(tp):
-                    moves.append(tp)
-                    if is_sqr_enemy(tp):
-                        break
-                    tp = (tp[0] + d[0], tp[1] + d[1])
+            moves.extend(
+                self.get_rook_moves(pc_pos, is_sqr_ally, is_sqr_enemy))
+            moves.extend(
+                self.get_bishop_moves(pc_pos, is_sqr_ally, is_sqr_enemy))
 
         elif selected_piece in [self.WK, self.BK]:
-            row, col = pc_pos
-            for d in [(1, 1), (1, -1), (-1, 1), (-1, -1),
-                      (0, -1), (0, 1), (1, 0), (-1, 0)]:
-                if (0 <= row + d[0] < SQR)\
-                        and (0 <= col + d[1] < SQR)\
-                        and not is_ally(self.brd[row + d[0]][col + d[1]]):
-                    moves.append((row + d[0], col + d[1]))
+            moves.extend(self.get_king_moves(pc_pos, is_sqr_ally))
+            moves.extend(self.get_king_castling_move(pc_pos, t))
         return moves
 
     def get_valid_move(self):
