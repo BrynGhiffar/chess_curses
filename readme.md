@@ -24,5 +24,6 @@ Below are some of the things that I wish to implement in the future:
 * Implement pawn promotion. Once a pawn reaches the end it can be promoted to any piece, except for the king and another pawn.
 
 **Screenshot:**
-![](/media/bryn/KATE/projects/python/chess_curses/game_play.png)
-![](/media/bryn/KATE/projects/python/chess_curses/game_play2.png)
+![](./game_play.png)
+
+![](./game_play2.png)
