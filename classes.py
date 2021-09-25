@@ -29,7 +29,7 @@ class Control:
 
     # * The Control determine the players turns
     # * The Controls controls the cursor
-    # * THe Control controls the the current selected piece
+    # * The Control controls the the current selected piece
     # * The Control controls the board
 
     def __init__(self):
@@ -438,13 +438,13 @@ class Control:
         if self.is_white(selected_piece):
 
             # find legal next moves for that particular black piece
-            moves.extend(self.get_valid_move_aux(pc_pos, self.is_white, self.is_black))
-            pass
+            moves.extend(
+                self.get_valid_move_aux(pc_pos, self.is_white, self.is_black))
         elif self.is_black(selected_piece):
 
             # find legal next moves for that particular white piece
-            moves.extend(self.get_valid_move_aux(pc_pos, self.is_black, self.is_white))
-            pass
+            moves.extend(
+                self.get_valid_move_aux(pc_pos, self.is_black, self.is_white))
         return moves
 
 class Display(Control):
